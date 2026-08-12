@@ -10,10 +10,10 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(tunnel-manager)
+        - prefix(github.com/kreigan/tunneller)
     goimports:
       local-prefixes:
-        - tunnel-manager
+        - github.com/kreigan/tunneller
 
 linters:
   default: standard

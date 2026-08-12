@@ -1,0 +1,54 @@
+version: 2
+
+project_name: tunneller
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+      - -X github.com/kreigan/tunneller/cmd.version={{.Version}}
+      - -X github.com/kreigan/tunneller/cmd.commit={{.Commit}}
+      - -X github.com/kreigan/tunneller/cmd.date={{.Date}}
+
+archives:
+  - formats: [binary]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  groups:
+    - title: 'New Features'
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: 'Documentation updates'
+      regexp: "^.*docs[(\\w)]*:+.*$"
+      order: 2
+    - title: 'Other'
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch

@@ -1,4 +1,4 @@
-module sshtun-docker
+module github.com/kreigan/tunneller
 
 go 1.26.5
 

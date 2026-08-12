@@ -8,9 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"sshtun-docker/internal/config"
-	"sshtun-docker/internal/manager"
-	"sshtun-docker/internal/sshauth"
+	"github.com/kreigan/tunneller/internal/config"
+	"github.com/kreigan/tunneller/internal/manager"
+	"github.com/kreigan/tunneller/internal/sshauth"
 
 	"github.com/spf13/cobra"
 )
@@ -25,7 +25,7 @@ var (
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "tunnel-manager",
+		Use:   "tunneller",
 		Short: "Manage local SSH tunnels through a single SSH host",
 		Run: func(cmd *cobra.Command, args []string) {
 			if healthcheck {

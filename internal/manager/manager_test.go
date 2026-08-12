@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"sshtun-docker/internal/config"
+	"github.com/kreigan/tunneller/internal/config"
 
 	"golang.org/x/crypto/ssh"
 )

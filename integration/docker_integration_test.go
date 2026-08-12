@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"sshtun-docker/internal/config"
-	"sshtun-docker/internal/manager"
+	"github.com/kreigan/tunneller/internal/config"
+	"github.com/kreigan/tunneller/internal/manager"
 )
 
 // TestDockerIntegrationScenarios validates the tunnel manager against real

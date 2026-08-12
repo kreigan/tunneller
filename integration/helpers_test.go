@@ -27,9 +27,9 @@ import (
 	"testing"
 	"time"
 
-	"sshtun-docker/internal/config"
-	"sshtun-docker/internal/manager"
-	"sshtun-docker/internal/sshauth"
+	"github.com/kreigan/tunneller/internal/config"
+	"github.com/kreigan/tunneller/internal/manager"
+	"github.com/kreigan/tunneller/internal/sshauth"
 
 	"golang.org/x/crypto/ssh"
 

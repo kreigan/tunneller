@@ -1,4 +1,4 @@
-# tunnel-manager
+# tunneller
 
 A small Go-based SSH tunnel manager designed to run in Docker. It opens one or more
 persistent local-port-forward tunnels through a single shared SSH connection, monitors
@@ -47,7 +47,7 @@ If `TUNNELS` is unset, the manager falls back to `CONFIG_FILE` and reads the sam
 | `SSH_PORT` | `22` | SSH port |
 | `SSH_USER` | _(required)_ | SSH username |
 | `SSH_AUTH_METHOD` | `key` | `key` or `agent` |
-| `SSH_KEY_FILE` | `/home/appuser/.ssh/id` | Path to private key file (used when `SSH_AUTH_METHOD=key`) |
+| `SSH_KEY_FILE` | `$HOME/.ssh/id` | Path to private key file (used when `SSH_AUTH_METHOD=key`) |
 | `SSH_AUTH_SOCK` | _(unset)_ | Path to mounted SSH agent socket inside the container (used when `SSH_AUTH_METHOD=agent`) |
 | `TUNNELS` | _(required, unless `CONFIG_FILE` used)_ | Newline-separated list of tunnels: `local_ip:local_port:target_host:target_port` |
 | `CONFIG_FILE` | `/tmp/config.conf` | Optional file fallback for tunnel config, same format as `TUNNELS`, used only if `TUNNELS` is unset |

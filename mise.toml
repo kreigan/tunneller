@@ -5,11 +5,11 @@ go = "1.26.5"
 golangci-lint = "latest"
 
 [tasks]
-build-binary = "go build -o bin/tunnel-manager ./cmd/tunnel-manager"
-build-docker = "docker build -t tunnel-manager:dev ."
+build-binary = "go build -o bin/tunneller ./cmd/tunneller"
+build-docker = "docker build -t tunneller:dev ."
 lint = "golangci-lint run"
 test = "go test ./..."
 
 [tasks.build]
-description = "Build the tunnel-manager binary and Docker image"
+description = "Build the tunneller binary and Docker image"
 depends = ["build-binary", "build-docker"]
