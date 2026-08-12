@@ -1,3 +1,6 @@
+/*
+Package manager coordinates SSH tunnel listeners and reconnect logic.
+*/
 package manager
 
 import (
@@ -13,21 +16,24 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kreigan/tunneller/internal/config"
-
 	"golang.org/x/crypto/ssh"
+
+	"github.com/kreigan/tunneller/internal/config"
 )
 
+// SSHClient is the subset of ssh.Client behavior required by the manager.
 type SSHClient interface {
 	Dial(network, addr string) (net.Conn, error)
-	SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error)
+	SendRequest(name string, wantReply bool, payload []byte) (ok bool, response []byte, err error)
 	Close() error
 }
 
+// SSHDialer creates SSH clients for a given remote address.
 type SSHDialer interface {
 	Dial(network, addr string, cfg *ssh.ClientConfig) (SSHClient, error)
 }
 
+// TCPProber checks whether an SSH target host is reachable.
 type TCPProber interface {
 	DialTimeout(network, addr string, timeout time.Duration) (net.Conn, error)
 }
@@ -40,7 +46,11 @@ func (n *netSSHClient) Dial(network, addr string) (net.Conn, error) {
 	return n.client.Dial(network, addr)
 }
 
-func (n *netSSHClient) SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error) {
+func (n *netSSHClient) SendRequest(
+	name string,
+	wantReply bool,
+	payload []byte,
+) (ok bool, response []byte, err error) {
 	return n.client.SendRequest(name, wantReply, payload)
 }
 
@@ -66,6 +76,9 @@ func (p realTCPProber) DialTimeout(network, addr string, timeout time.Duration) 
 
 type listenerFactory func(network, addr string) (net.Listener, error)
 
+// Manager owns the SSH tunnel listeners and connection lifecycle.
+//
+//nolint:govet // the field layout intentionally groups lock/runtime state for clarity.
 type Manager struct {
 	cfg         config.Config
 	sshCfg      *ssh.ClientConfig
@@ -84,6 +97,7 @@ type Manager struct {
 	verbose  bool
 }
 
+// New creates a new Manager instance.
 func New(cfg config.Config, sshCfg *ssh.ClientConfig, logger *log.Logger) *Manager {
 	if logger == nil {
 		logger = log.New(os.Stdout, "", log.LstdFlags)
@@ -113,6 +127,7 @@ func sleepWithContext(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+// Run starts listeners and maintains the SSH connection until the context ends.
 func (m *Manager) Run(ctx context.Context) int {
 	if err := m.healthStore.WriteUnhealthy("starting"); err != nil {
 		m.logf("warning: failed to update health file: %v", err)
@@ -121,7 +136,9 @@ func (m *Manager) Run(ctx context.Context) int {
 	listeners, err := m.bindListeners()
 	if err != nil {
 		m.logf("fatal: %v", err)
-		_ = m.healthStore.WriteUnhealthy(err.Error())
+		if healthErr := m.healthStore.WriteUnhealthy(err.Error()); healthErr != nil {
+			m.logf("warning: failed to update health file: %v", healthErr)
+		}
 		if errors.Is(err, syscall.EADDRINUSE) || strings.Contains(strings.ToLower(err.Error()), "address already in use") {
 			return ExitCodeLocalPortInUse
 		}
@@ -137,6 +154,11 @@ func (m *Manager) Run(ctx context.Context) int {
 		go m.acceptLoop(ctx, listener, tunnel)
 	}
 
+	return m.runConnectionLoop(ctx)
+}
+
+//nolint:gocognit // reconnect loop handles auth, network, and retry phases.
+func (m *Manager) runConnectionLoop(ctx context.Context) int {
 	for {
 		client, exitCode := connectWithRecovery(ctx, m.cfg.TunnelMaxRetries, m.cfg.ConnectionCheckInterval, reconnectHooks{
 			dialSSH:      m.dialSSH,
@@ -175,7 +197,9 @@ func (m *Manager) Run(ctx context.Context) int {
 		}
 
 		m.logf("ssh connection lost: %v", disconnected)
-		_ = m.healthStore.WriteUnhealthy(fmt.Sprintf("connection lost: %v", disconnected))
+		if err := m.healthStore.WriteUnhealthy(fmt.Sprintf("connection lost: %v", disconnected)); err != nil {
+			m.logf("warning: failed to update health file: %v", err)
+		}
 		m.clearClient()
 	}
 }
@@ -194,7 +218,9 @@ func (m *Manager) isSSHHostReachable() bool {
 	if err != nil {
 		return false
 	}
-	_ = conn.Close()
+	if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) && m.verbose {
+		m.logf("warning: failed to close tcp probe connection: %v", err)
+	}
 	return true
 }
 
@@ -221,9 +247,17 @@ func (m *Manager) bindListeners() ([]net.Listener, error) {
 		ln, err := m.listenFn("tcp", tunnel.LocalAddress())
 		if err != nil {
 			for _, l := range listeners {
-				_ = l.Close()
+				if closeErr := l.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
+					m.logf("warning: failed to close listener during cleanup: %v", closeErr)
+				}
 			}
-			return nil, fmt.Errorf("failed to start tunnel %s -> %s on local %s: %w", tunnel.TargetHost, tunnel.TargetAddress(), tunnel.LocalAddress(), err)
+			return nil, fmt.Errorf(
+				"failed to start tunnel %s -> %s on local %s: %w",
+				tunnel.TargetHost,
+				tunnel.TargetAddress(),
+				tunnel.LocalAddress(),
+				err,
+			)
 		}
 		listeners = append(listeners, ln)
 	}
@@ -232,7 +266,9 @@ func (m *Manager) bindListeners() ([]net.Listener, error) {
 
 func (m *Manager) closeListeners() {
 	for _, ln := range m.listeners {
-		_ = ln.Close()
+		if err := ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			m.logf("warning: failed to close tunnel listener: %v", err)
+		}
 	}
 }
 
@@ -255,7 +291,9 @@ func (m *Manager) acceptLoop(ctx context.Context, listener net.Listener, tunnel 
 
 func (m *Manager) forwardConnection(tunnel config.Tunnel, localConn net.Conn) {
 	defer func() {
-		_ = localConn.Close()
+		if err := localConn.Close(); err != nil && !errors.Is(err, net.ErrClosed) && m.verbose {
+			m.logf("warning: failed to close local connection on %s: %v", tunnel.LocalAddress(), err)
+		}
 	}()
 
 	client := m.getClient()
@@ -274,18 +312,24 @@ func (m *Manager) forwardConnection(tunnel config.Tunnel, localConn net.Conn) {
 		return
 	}
 	defer func() {
-		_ = remoteConn.Close()
+		if err := remoteConn.Close(); err != nil && !errors.Is(err, net.ErrClosed) && m.verbose {
+			m.logf("warning: failed to close remote connection on %s: %v", tunnel.LocalAddress(), err)
+		}
 	}()
 
+	m.copyBidirectionally(tunnel, localConn, remoteConn)
+}
+
+func (m *Manager) copyBidirectionally(tunnel config.Tunnel, localConn, remoteConn net.Conn) {
 	done := make(chan struct{}, 2)
-	go func() {
-		_, _ = io.Copy(remoteConn, localConn)
+	copyUntilDone := func(dst, src net.Conn, direction string) {
+		if _, err := io.Copy(dst, src); err != nil && !errors.Is(err, net.ErrClosed) && m.verbose {
+			m.logf("copy from %s on %s ended: %v", direction, tunnel.LocalAddress(), err)
+		}
 		done <- struct{}{}
-	}()
-	go func() {
-		_, _ = io.Copy(localConn, remoteConn)
-		done <- struct{}{}
-	}()
+	}
+	go copyUntilDone(remoteConn, localConn, "local to remote")
+	go copyUntilDone(localConn, remoteConn, "remote to local")
 	<-done
 	<-done
 
@@ -304,7 +348,9 @@ func (m *Manager) clearClient() {
 	m.clientMu.Lock()
 	defer m.clientMu.Unlock()
 	if m.client != nil {
-		_ = m.client.Close()
+		if err := m.client.Close(); err != nil && !errors.Is(err, net.ErrClosed) && m.verbose {
+			m.logf("warning: failed to close SSH client: %v", err)
+		}
 		m.client = nil
 	}
 }
@@ -319,6 +365,7 @@ func (m *Manager) logf(format string, args ...any) {
 	m.logger.Printf(format, args...)
 }
 
+// HealthStore returns the current health store for the manager.
 func (m *Manager) HealthStore() *HealthStore {
 	return m.healthStore
 }

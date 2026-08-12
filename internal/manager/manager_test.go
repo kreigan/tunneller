@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kreigan/tunneller/internal/config"
-
 	"golang.org/x/crypto/ssh"
+
+	"github.com/kreigan/tunneller/internal/config"
 )
 
 func baseConfig(t *testing.T) config.Config {

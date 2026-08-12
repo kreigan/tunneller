@@ -8,26 +8,26 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/spf13/cobra"
+
 	"github.com/kreigan/tunneller/internal/config"
 	"github.com/kreigan/tunneller/internal/manager"
 	"github.com/kreigan/tunneller/internal/sshauth"
-
-	"github.com/spf13/cobra"
 )
 
 var (
 	healthcheck bool
 	healthFile  string
-	version 	string	= "dev"
-	commit  	string	= "none"
-	date    	string	= "unknown"
+	version     = "dev"
+	commit      = "none"
+	date        = "unknown"
 )
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tunneller",
 		Short: "Manage local SSH tunnels through a single SSH host",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			if healthcheck {
 				store := manager.NewHealthStore(healthFile)
 				healthy, err := store.IsHealthy()

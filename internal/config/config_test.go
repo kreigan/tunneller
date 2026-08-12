@@ -101,9 +101,13 @@ func setEnv(t *testing.T, key, value string) {
 
 	t.Cleanup(func() {
 		if !hadValue {
-			_ = os.Unsetenv(key)
+			if err := os.Unsetenv(key); err != nil {
+				t.Errorf("Unsetenv(%s): %v", key, err)
+			}
 			return
 		}
-		_ = os.Setenv(key, oldValue)
+		if err := os.Setenv(key, oldValue); err != nil {
+			t.Errorf("Setenv(%s): %v", key, err)
+		}
 	})
 }
