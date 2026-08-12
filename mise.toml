@@ -1,0 +1,15 @@
+[tools]
+"aqua:goreleaser/goreleaser" = "latest"
+"aqua:nektos/act" = "latest"
+go = "1.26.5"
+golangci-lint = "latest"
+
+[tasks]
+build-binary = "go build -o bin/tunnel-manager ./cmd/tunnel-manager"
+build-docker = "docker build -t tunnel-manager:dev ."
+lint = "golangci-lint run"
+test = "go test ./..."
+
+[tasks.build]
+description = "Build the tunnel-manager binary and Docker image"
+depends = ["build-binary", "build-docker"]

@@ -1,0 +1,15 @@
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitRootLogin no
+UsePAM no
+
+AllowTcpForwarding yes
+PermitOpen any
+GatewayPorts no
+
+Subsystem sftp internal-sftp
+LogLevel VERBOSE

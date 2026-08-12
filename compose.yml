@@ -1,0 +1,30 @@
+# Reference compose file for tunnel-manager.
+# Real deployments can structure mounts, env files, and networking differently.
+services:
+  tunneller-agent:
+    image: tunnel-manager:dev
+    network_mode: "host"
+    environment:
+      SSH_HOST: 10.1.21.113
+      SSH_USER: root
+      SSH_AUTH_METHOD: agent
+      TUNNELS: |
+        127.1.21.113:8088:127.0.0.1:80
+    volumes:
+      - ${SSH_AUTH_SOCK}:/home/appuser/.ssh/agent.sock
+      - /etc/localtime:/etc/localtime:ro
+
+  # Alternate key-based auth example:
+  # tunneller-key:
+  #   image: tunnel-manager:dev
+  #   restart: unless-stopped
+  #   network_mode: "host"
+  #   environment:
+  #     SSH_HOST: 10.1.21.113
+  #     SSH_USER: tunnel-user
+  #     SSH_AUTH_METHOD: key
+  #     TUNNELS: |
+  #       127.1.21.113:8086:127.0.0.1:80
+  #   volumes:
+  #     - ${SSH_KEY:?set SSH_KEY path}:/home/appuser/.ssh/key:ro
+  #     - /etc/localtime:/etc/localtime:ro

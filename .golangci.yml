@@ -1,0 +1,183 @@
+version: "2"
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(tunnel-manager)
+    goimports:
+      local-prefixes:
+        - tunnel-manager
+
+linters:
+  default: standard
+  enable:
+    # Additional enabled linters beyond standard
+    - asasalint # Check for pass []any as any in variadic func
+    - asciicheck # Check for non-ASCII identifiers
+    - bidichk # Check for dangerous unicode sequences
+    - bodyclose # Check HTTP response body is closed
+    - cyclop # Check cyclomatic complexity
+    - dupl # Check for code duplication
+    - durationcheck # Check for duration multiplication
+    - errname # Check error naming conventions
+    - errorlint # Find misuses of errors
+    - exhaustive # Check exhaustiveness of enum switch
+    - funlen # Check function length
+    - copyloopvar # Check for pointers to loop variables
+    - gocheckcompilerdirectives # Check compiler directive comments
+    - gocognit # Calculate cognitive complexity
+    - goconst # Find repeated strings
+    - gocritic # Comprehensive diagnostics
+    - gosec # Security checks
+    - lll # Line length limit
+    - misspell # Check spelling
+    - nakedret # Find naked returns in long functions
+    - nestif # Check deeply nested if statements
+    - nilerr # Find code that returns nil even when err is not nil
+    - nolintlint # Report ill-formed or insufficient nolint directives
+    - prealloc # Find slice declarations with preallocations
+    - predeclared # Find code that shadows predeclared identifiers
+    - revive # Fast linter
+    - thelper # Detect test helpers without t.Helper()
+    - unconvert # Remove unnecessary type conversions
+    - unparam # Detect unused function parameters
+    - usestdlibvars # Detect possibility to use standard lib variables
+    - whitespace # Check for trailing whitespace
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+    govet:
+      enable-all: true
+      disable:
+        - shadow
+
+    cyclop:
+      max-complexity: 15
+
+    dupl:
+      threshold: 100
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    gocognit:
+      min-complexity: 15
+
+    misspell:
+      locale: US
+
+    lll:
+      line-length: 120
+      tab-width: 2
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+
+    funlen:
+      lines: 100
+      statements: 50
+      ignore-comments: true
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    revive:
+      rules:
+        - name: var-naming
+        - name: exported
+        - name: package-comments
+        - name: indent-error-flow
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: if-return
+        - name: increment-decrement
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    gosec:
+      severity: medium
+      confidence: medium
+
+    nolintlint:
+      allow-unused: false
+      allow-no-explanation: []
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    generated: lax
+    warn-unused: true
+    rules:
+      # Exclude some linters from test files
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - cyclop
+          - funlen
+          - dupl
+          - gosec
+          - lll
+
+      # Exclude dupl from cmd files (similar cobra commands)
+      - path: cmd/
+        linters:
+          - dupl
+
+      # Exclude package comment check for main package
+      - path: main\.go
+        linters:
+          - revive
+        text: "package-comments"
+
+      # Exclude line length for long strings
+      - linters:
+          - lll
+        source: "^//go:generate "
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  formats:
+    text:
+      print-linter-name: true
+      print-issued-lines: true
+  sort-order:
+    - linter
+    - file
+  show-stats: true
