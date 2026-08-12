@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: &checkout actions/checkout@v7
+
+      - name: Set up Go
+        uses: &setup-go actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with: &setup-go-args
+          go-version-file: go.mod
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: *checkout
+
+      - name: Set up Go
+        uses: *setup-go
+        with: *setup-go-args
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: *checkout
+
+      - name: Set up Go
+        uses: *setup-go
+        with: *setup-go-args
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Verify GoReleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          args: check
