@@ -7,10 +7,10 @@ import (
 	"net"
 	"os"
 
-	"github.com/kreigan/tunneller/internal/config"
-
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+
+	"github.com/kreigan/tunneller/internal/config"
 )
 
 // BuildClientConfig builds an ssh.ClientConfig for the given application
@@ -41,15 +41,18 @@ func BuildClientConfig(cfg config.Config) (*ssh.ClientConfig, func(), error) {
 		agentClient := agent.NewClient(agentConn)
 		authMethod = ssh.PublicKeysCallback(agentClient.Signers)
 		cleanup = func() {
-			_ = agentConn.Close()
+			if err := agentConn.Close(); err != nil {
+				fmt.Printf("warning: close ssh-agent socket: %v\n", err)
+			}
 		}
 	default:
 		return nil, cleanup, fmt.Errorf("unsupported auth method: %s", cfg.SSHAuthMethod)
 	}
 
 	sshCfg := &ssh.ClientConfig{
-		User:            cfg.SSHUser,
-		Auth:            []ssh.AuthMethod{authMethod},
+		User: cfg.SSHUser,
+		Auth: []ssh.AuthMethod{authMethod},
+		//nolint:gosec // The project intentionally bypasses host-key verification for this tunnel manager.
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         cfg.ConnectTimeout,
 	}

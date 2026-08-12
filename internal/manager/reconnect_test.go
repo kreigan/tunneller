@@ -14,7 +14,7 @@ import (
 type mockSSHClient struct{}
 
 func (m *mockSSHClient) Dial(string, string) (net.Conn, error) { return nil, nil }
-func (m *mockSSHClient) SendRequest(string, bool, []byte) (bool, []byte, error) {
+func (m *mockSSHClient) SendRequest(string, bool, []byte) (ok bool, response []byte, err error) {
 	return true, nil, nil
 }
 func (m *mockSSHClient) Close() error { return nil }
@@ -26,6 +26,7 @@ func (timeoutError) Timeout() bool   { return true }
 func (timeoutError) Temporary() bool { return true }
 
 func TestClassifyDialError(t *testing.T) {
+	//nolint:govet // the table is intentionally compact for the test case layout.
 	tests := []struct {
 		name string
 		err  error
@@ -37,7 +38,6 @@ func TestClassifyDialError(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			got := classifyDialError(tc.err)
 			if got != tc.want {
@@ -130,7 +130,7 @@ func TestConnectWithRecoveryAuthFailureExits105(t *testing.T) {
 		},
 		tcpReachable:  func() bool { return true },
 		sleep:         func(context.Context, time.Duration) bool { return true },
-		now:           func() time.Time { return time.Now() },
+		now:           time.Now,
 		markUnhealthy: func(reason string) { unhealthy = append(unhealthy, reason) },
 		logf:          func(string, ...any) {},
 	})
@@ -158,7 +158,7 @@ func TestConnectWithRecoveryRetriesExhausted(t *testing.T) {
 		},
 		tcpReachable:  func() bool { return true },
 		sleep:         func(context.Context, time.Duration) bool { return true },
-		now:           func() time.Time { return time.Now() },
+		now:           time.Now,
 		markUnhealthy: func(string) {},
 		logf:          func(string, ...any) {},
 	})
@@ -189,7 +189,7 @@ func TestConnectWithRecoveryRetryForever(t *testing.T) {
 		},
 		tcpReachable:  func() bool { return true },
 		sleep:         func(context.Context, time.Duration) bool { return true },
-		now:           func() time.Time { return time.Now() },
+		now:           time.Now,
 		markUnhealthy: func(string) {},
 		logf:          func(string, ...any) {},
 	})

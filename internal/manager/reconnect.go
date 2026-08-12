@@ -10,17 +10,25 @@ import (
 )
 
 const (
-	ExitCodeConfigInvalid    = 100
-	ExitCodeAuthFailure      = 105
-	ExitCodeLocalPortInUse   = 110
+	// ExitCodeConfigInvalid means the SSH tunnel configuration is invalid.
+	ExitCodeConfigInvalid = 100
+	// ExitCodeAuthFailure means the SSH server rejected authentication.
+	ExitCodeAuthFailure = 105
+	// ExitCodeLocalPortInUse means a local listener port is already occupied.
+	ExitCodeLocalPortInUse = 110
+	// ExitCodeRetriesExhausted means all retry attempts were exhausted.
 	ExitCodeRetriesExhausted = 115
 )
 
+// DialErrorClass identifies the type of SSH dial failure encountered.
 type DialErrorClass int
 
 const (
+	// DialErrorHostUnreachable indicates the remote SSH host is not reachable.
 	DialErrorHostUnreachable DialErrorClass = iota
+	// DialErrorAuthFailure indicates the SSH host refused authentication.
 	DialErrorAuthFailure
+	// DialErrorOther indicates another dial error type.
 	DialErrorOther
 )
 
@@ -59,7 +67,12 @@ func classifyDialError(err error) DialErrorClass {
 	return DialErrorOther
 }
 
-func connectWithRecovery(ctx context.Context, maxRetries int, interval time.Duration, hooks reconnectHooks) (SSHClient, int) {
+func connectWithRecovery(
+	ctx context.Context,
+	maxRetries int,
+	interval time.Duration,
+	hooks reconnectHooks,
+) (client SSHClient, exitCode int) {
 	attempt := 0
 	for {
 		if ctx.Err() != nil {
@@ -71,45 +84,78 @@ func connectWithRecovery(ctx context.Context, maxRetries int, interval time.Dura
 			return client, 0
 		}
 
-		cls := classifyDialError(err)
-		reachable := hooks.tcpReachable()
-
-		if cls == DialErrorAuthFailure && reachable {
-			hooks.markUnhealthy(fmt.Sprintf("authentication failure: %v", err))
-			hooks.logf("fatal: ssh host reachable but authentication/handshake failed: %v", err)
-			return nil, ExitCodeAuthFailure
+		if exitCode, done, resetRetries := handleDialFailure(
+			ctx,
+			retryState{attempt: attempt, maxRetries: maxRetries},
+			interval,
+			err,
+			hooks,
+		); done {
+			return nil, exitCode
+		} else if resetRetries {
+			attempt = 0
+		} else {
+			attempt++
 		}
+	}
+}
 
-		if cls == DialErrorHostUnreachable || !reachable {
-			hooks.markUnhealthy("ssh host unreachable")
-			downAt := hooks.now()
-			hooks.logf("ssh host unreachable; pausing forwarding until host is reachable")
-			for {
-				if ctx.Err() != nil {
-					return nil, 0
-				}
-				if hooks.tcpReachable() {
-					waited := hooks.now().Sub(downAt).Round(time.Second)
-					hooks.logf("ssh host reachable again after %s; reconnecting", waited)
-					attempt = 0
-					break
-				}
-				if !hooks.sleep(ctx, interval) {
-					return nil, 0
-				}
-			}
-			continue
-		}
+type retryState struct {
+	attempt    int
+	maxRetries int
+}
 
-		attempt++
-		hooks.markUnhealthy(fmt.Sprintf("reconnect attempt %d failed: %v", attempt, err))
-		if maxRetries >= 0 && attempt >= maxRetries {
-			hooks.logf("fatal: reconnect retries exhausted after %d attempts", attempt)
-			return nil, ExitCodeRetriesExhausted
+func handleDialFailure(
+	ctx context.Context,
+	state retryState,
+	interval time.Duration,
+	err error,
+	hooks reconnectHooks,
+) (exitCode int, done, resetRetries bool) {
+	cls := classifyDialError(err)
+	reachable := hooks.tcpReachable()
+
+	if cls == DialErrorAuthFailure && reachable {
+		hooks.markUnhealthy(fmt.Sprintf("authentication failure: %v", err))
+		hooks.logf("fatal: ssh host reachable but authentication/handshake failed: %v", err)
+		return ExitCodeAuthFailure, true, false
+	}
+
+	if cls == DialErrorHostUnreachable || !reachable {
+		if waitForReachability(ctx, interval, hooks) {
+			return 0, true, false
 		}
-		hooks.logf("reconnect attempt %d failed (%v); retrying in %s", attempt, err, interval)
+		return 0, false, true
+	}
+
+	state.attempt++
+	hooks.markUnhealthy(fmt.Sprintf("reconnect attempt %d failed: %v", state.attempt, err))
+	if state.maxRetries >= 0 && state.attempt >= state.maxRetries {
+		hooks.logf("fatal: reconnect retries exhausted after %d attempts", state.attempt)
+		return ExitCodeRetriesExhausted, true, false
+	}
+	hooks.logf("reconnect attempt %d failed (%v); retrying in %s", state.attempt, err, interval)
+	if !hooks.sleep(ctx, interval) {
+		return 0, true, false
+	}
+	return 0, false, false
+}
+
+func waitForReachability(ctx context.Context, interval time.Duration, hooks reconnectHooks) bool {
+	hooks.markUnhealthy("ssh host unreachable")
+	downAt := hooks.now()
+	hooks.logf("ssh host unreachable; pausing forwarding until host is reachable")
+	for {
+		if ctx.Err() != nil {
+			return true
+		}
+		if hooks.tcpReachable() {
+			waited := hooks.now().Sub(downAt).Round(time.Second)
+			hooks.logf("ssh host reachable again after %s; reconnecting", waited)
+			return false
+		}
 		if !hooks.sleep(ctx, interval) {
-			return nil, 0
+			return true
 		}
 	}
 }
