@@ -2,7 +2,7 @@
 # Real deployments can structure mounts, env files, and networking differently.
 services:
   tunneller-agent:
-    image: tunneller:latest
+    image: ghcr.io/kreigan/tunneller:latest
     network_mode: "host"
     environment:
       SSH_HOST: 10.1.21.113
@@ -16,7 +16,7 @@ services:
 
   # Alternate key-based auth example:
   # tunneller-key:
-  #   image: tunneller:latest
+  #   image: ghcr.io/kreigan/tunneller:latest
   #   restart: unless-stopped
   #   network_mode: "host"
   #   environment:
