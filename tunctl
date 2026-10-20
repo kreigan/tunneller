@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Manage tunneller Docker Compose projects.
+# Every *.yaml / *.yml file in the tunneller config directory is a separate
+# Compose project. The project name is looked up from existing projects by
+# config file path; files that have no project yet fall back to the file name
+# without extension.
+set -euo pipefail
+
+config_dir="${TUNNELLER_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/tunneller}"
+
+usage() {
+  cat <<USAGE
+Usage: tunctl <start|stop|restart|logs|status> [-c NAME]... [-p PROFILE]... [SERVICE]...
+
+  start    Start tunnels in the background
+  stop     Stop and remove tunnels
+  restart  Restart tunnels
+  logs     Follow tunnel logs
+  status   Show project, service, age and status of all configured services
+
+Without options, all compose files, profiles and services are used.
+  -c, --compose NAME      Limit to a compose file (name without extension, repeatable)
+  -p, --profile PROFILE   Limit to a profile (repeatable)
+  SERVICE                 Limit to a gateway (service) by name
+
+Compose files are read from \$TUNNELLER_CONFIG_DIR
+(default: \${XDG_CONFIG_HOME:-~/.config}/tunneller).
+USAGE
+}
+
+die() { echo "tunctl: $*" >&2; exit 1; }
+
+[[ $# -ge 1 ]] || { usage >&2; exit 1; }
+command=$1
+shift
+
+case $command in
+  -h|--help|help) usage; exit 0 ;;
+  start|stop|restart|logs|status) ;;
+  *) echo "tunctl: unknown command '$command'" >&2; usage >&2; exit 1 ;;
+esac
+
+composes=()
+profiles=()
+services=()
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -c|--compose)
+      [[ $# -ge 2 ]] || die "$1 requires a value"
+      composes+=("$2"); shift 2 ;;
+    -p|--profile)
+      [[ $# -ge 2 ]] || die "$1 requires a value"
+      profiles+=(--profile "$2"); shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) die "unknown option '$1'" ;;
+    *) services+=("$1"); shift ;;
+  esac
+done
+
+# Enable every profile unless some were picked
+[[ ${#profiles[@]} -gt 0 ]] || profiles=(--profile '*')
+
+# Fallback project name, same as docker compose derives it from a directory name
+project_name() {
+  local name=${1##*/}
+  name=${name%.*}
+  name=${name,,}
+  echo "${name//[^a-z0-9_-]/-}"
+}
+
+# Project that was created from the given compose file, if any
+find_project() {
+  docker compose ls --all --format json 2>/dev/null |
+    jq -er --arg f "$1" \
+      'first(.[] | select(.ConfigFiles | split(",") | index($f)) | .Name)'
+}
+
+files=()
+shopt -s nullglob
+for f in "$config_dir"/*.yaml "$config_dir"/*.yml; do
+  if [[ ${#composes[@]} -gt 0 ]]; then
+    for c in "${composes[@]}"; do
+      stem=${f##*/}; stem=${stem%.*}
+      [[ $stem == "${c%.*}" || $stem == "$c" || $(find_project "$f") == "$c" ]] && files+=("$f")
+    done
+  else
+    files+=("$f")
+  fi
+done
+shopt -u nullglob
+[[ ${#files[@]} -gt 0 ]] || die "no matching compose files in $config_dir"
+
+matched=()
+status_rows=()
+pids=()
+trap 'kill "${pids[@]}" 2>/dev/null || true' INT TERM
+
+for file in "${files[@]}"; do
+  project=$(find_project "$file" || project_name "$file")
+  dc=(docker compose --file "$file" --project-name "$project" "${profiles[@]}")
+
+  mapfile -t available < <("${dc[@]}" config --services)
+  [[ ${#available[@]} -gt 0 ]] || continue
+
+  selected=()
+  if [[ ${#services[@]} -gt 0 ]]; then
+    for s in "${services[@]}"; do
+      for a in "${available[@]}"; do
+        [[ $s == "$a" ]] && selected+=("$s") && matched+=("$s")
+      done
+    done
+    [[ ${#selected[@]} -gt 0 ]] || continue
+  fi
+
+  case $command in
+    start)   "${dc[@]}" up --detach "${selected[@]}" ;;
+    stop)
+      if [[ ${#selected[@]} -gt 0 ]]; then
+        "${dc[@]}" rm --stop --force "${selected[@]}"
+      else
+        "${dc[@]}" down
+      fi ;;
+    restart) "${dc[@]}" restart "${selected[@]}" ;;
+    logs)
+      "${dc[@]}" logs --follow --tail 100 "${selected[@]}" &
+      pids+=($!) ;;
+    status)
+      rows=$("${dc[@]}" ps --all --format '{{.Project}}\t{{.Service}}\t{{.RunningFor}}\t{{.Status}}' "${selected[@]}")
+      [[ -z $rows ]] || status_rows+=("$rows")
+      # Services without a container are not listed by `ps`
+      for a in "${selected[@]:-${available[@]}}"; do
+        printf '%s\n' "$rows" | cut -f2 | grep -qxF -- "$a" ||
+          status_rows+=("$(printf '%s\t%s\t-\tnot created' "$project" "$a")")
+      done ;;
+  esac
+done
+
+if [[ ${#services[@]} -gt 0 ]]; then
+  for s in "${services[@]}"; do
+    printf '%s\n' "${matched[@]:-}" | grep -qxF -- "$s" || die "service not found: $s"
+  done
+fi
+
+if [[ $command == logs ]]; then
+  wait "${pids[@]}"
+elif [[ $command == status ]]; then
+  {
+    printf 'PROJECT\tSERVICE\tCREATED\tSTATUS\n'
+    [[ ${#status_rows[@]} -eq 0 ]] || printf '%s\n' "${status_rows[@]}"
+  } | column -t -s $'\t'
+fi
